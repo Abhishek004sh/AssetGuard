@@ -1,16 +1,21 @@
-const express = require("express");
 const dotenv = require("dotenv");
+// Must run before any local module is required - several of them (e.g.
+// config/cloudinary.js) read values off process.env at the top level,
+// the moment they're require()'d, not when a request comes in. If
+// dotenv.config() runs after those requires, process.env is still empty
+// for them even though the .env file itself is correct.
+dotenv.config();
+
+const express = require("express");
 const cors = require("cors");
 const connectDB = require("./src/config/db");
 const authRoutes = require("./src/routes/auth.routes");
-const testRoutes = require("./src/routes/test.routes");
 const workspaceRoutes = require("./src/routes/workspace.routes");
 const assetRoutes = require("./src/routes/asset.routes");
 const subscriptionRoutes = require("./src/routes/subscription.routes");
 const dashboardRoutes = require("./src/routes/dashboard.routes");
 const notificationRoutes = require("./src/routes/notification.routes");
 const errorHandler = require("./src/middleware/error.middleware");
-dotenv.config();
 connectDB();
 
 require("./src/jobs/notification.job");
@@ -21,7 +26,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use("/api/auth", authRoutes);
-app.use("/api/test",testRoutes);
 app.use("/api/workspace",workspaceRoutes);
 app.use("/api/assets",assetRoutes);
 app.use("/api/subscriptions",subscriptionRoutes);

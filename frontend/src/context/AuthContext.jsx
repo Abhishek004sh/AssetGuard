@@ -7,6 +7,8 @@ import {
 import api from "../services/api";
 
 
+// Context + provider live together here to keep the project simple.
+// eslint-disable-next-line react-refresh/only-export-components
 export const AuthContext =
 createContext();
 
@@ -23,6 +25,35 @@ export const AuthProvider = ({children})=>{
 
 
     const [authLoading,setAuthLoading] = useState(true);
+
+
+    // Used by BOTH login and register, so a newly registered user
+    // is signed in exactly the same way as someone logging in.
+    const login = (newToken, newUser) => {
+
+        localStorage.setItem("token", newToken);
+
+        // A fresh session should pick its workspace again
+        localStorage.removeItem("workspaceId");
+
+        setToken(newToken);
+
+        setUser(newUser);
+
+    };
+
+
+    const logout = () => {
+
+        localStorage.removeItem("token");
+
+        localStorage.removeItem("workspaceId");
+
+        setToken(null);
+
+        setUser(null);
+
+    };
 
 
     useEffect(()=>{
@@ -49,6 +80,8 @@ export const AuthProvider = ({children})=>{
                 // Token invalid/expired - log the user out
                 localStorage.removeItem("token");
 
+                localStorage.removeItem("workspaceId");
+
                 setToken(null);
 
                 setUser(null);
@@ -64,7 +97,7 @@ export const AuthProvider = ({children})=>{
 
         loadUser();
 
-        // Only run this on mount / when token changes from null -> value
+        // Only run this on mount
         // eslint-disable-next-line react-hooks/exhaustive-deps
     },[]);
 
@@ -77,6 +110,8 @@ export const AuthProvider = ({children})=>{
             setUser,
             token,
             setToken,
+            login,
+            logout,
             authLoading
         }}
         >

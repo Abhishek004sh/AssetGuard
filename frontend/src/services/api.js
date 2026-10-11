@@ -26,6 +26,19 @@ api.interceptors.request.use(
         }
 
 
+        // Tell the backend which workspace this request is about.
+        // Everything (assets, subscriptions, dashboard) is scoped to it.
+        const workspaceId =
+        localStorage.getItem("workspaceId");
+
+
+        if(workspaceId){
+
+            config.headers["x-workspace-id"] = workspaceId;
+
+        }
+
+
         return config;
 
     },
@@ -51,6 +64,8 @@ api.interceptors.response.use(
         if(error.response?.status === 401){
 
             localStorage.removeItem("token");
+
+            localStorage.removeItem("workspaceId");
 
             if(window.location.pathname !== "/login"){
 

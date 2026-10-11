@@ -51,31 +51,35 @@ const registerUser = async (req,res,next)=>{
         });
 
 
-        // Every OWNER gets their own workspace automatically.
-        // (MEMBER/VIEWER accounts join a workspace via the addMember flow instead.)
-        if(user.role === "OWNER"){
+        // Every new user gets their own personal workspace and is the OWNER
+        // of it. They can still be added to other people's workspaces later
+        // as a MEMBER - the role is stored per workspace, not on the account.
+        await Workspace.create({
 
-            await Workspace.create({
+            name: `${user.name}'s Workspace`,
 
-                name: `${user.name}'s Workspace`,
+            owner: user._id,
 
-                owner: user._id,
+            members: [
+                {
+                    user: user._id,
+                    role: "OWNER"
+                }
+            ]
 
-                members: [
-                    {
-                        user: user._id,
-                        role: "OWNER"
-                    }
-                ]
+        });
 
-            });
 
-        }
+        // Log the user in straight away, exactly like the login route does,
+        // so the frontend can go directly to the dashboard.
+        const token = generateToken(user._id);
 
 
         res.status(201).json({
 
             message:"User registered successfully",
+
+            token,
 
             user:{
                 id:user._id,

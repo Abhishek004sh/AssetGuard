@@ -1,6 +1,11 @@
 const Asset = require("../models/Asset");
 const uploadToCloudinary = require("../utils/cloudinaryUpload");
-const getUserWorkspace = require("../services/workspace.service");
+
+
+// Every route below runs after workspaceContext, so req.workspace is the
+// workspace the user currently has selected, and req.workspaceRole is the
+// role they hold inside it.
+
 
 const createAsset = async(req,res,next)=>{
 
@@ -16,22 +21,6 @@ const createAsset = async(req,res,next)=>{
             serialNumber,
             invoiceUrl
         } = req.body;
-
-
-        // Find user's workspace
-
-        const workspace = await getUserWorkspace(req.user._id);
-
-
-        if(!workspace){
-
-            return res.status(404).json({
-
-                message:"Workspace not found"
-
-            });
-
-        }
 
 
         const asset = await Asset.create({
@@ -52,7 +41,7 @@ const createAsset = async(req,res,next)=>{
 
             invoiceUrl,
 
-            workspace:workspace._id,
+            workspace:req.workspace._id,
 
             addedBy:req.user._id
 
@@ -89,17 +78,8 @@ const getAssets = async(req,res,next)=>{
         } = req.query;
 
 
-        const workspace = await getUserWorkspace(req.user._id);
-
-        if(!workspace){
-
-        return res.status(404).json({
-            message:"Workspace not found"
-        });
-        
-        }
         const query = {
-            workspace:workspace._id
+            workspace:req.workspace._id
         };
 
 
@@ -115,6 +95,7 @@ const getAssets = async(req,res,next)=>{
 
         const assets =
         await Asset.find(query)
+        .populate("addedBy","name email")
         .sort({
             [sort]:-1
         })
@@ -131,6 +112,14 @@ const getAssets = async(req,res,next)=>{
         res.status(200).json({
 
             assets,
+
+            // The frontend uses this to decide which buttons to show
+            myRole: req.workspaceRole,
+
+            workspace:{
+                _id: req.workspace._id,
+                name: req.workspace.name
+            },
 
             pagination:{
                 total,
@@ -149,6 +138,7 @@ const getAssets = async(req,res,next)=>{
     }
 
 };
+
 
 const updateAsset = async(req,res,next)=>{
 
@@ -173,25 +163,11 @@ const updateAsset = async(req,res,next)=>{
         }
 
 
-        const workspace = await getUserWorkspace(req.user._id);
-
-
-        if(!workspace){
-
-            return res.status(404).json({
-
-                message:"Workspace not found"
-
-            });
-
-        }
-
-
-        // Check asset belongs to user's workspace
-
+        // The asset must belong to the workspace the user is currently in,
+        // otherwise someone could edit another workspace's data by ID.
         if(
-            asset.workspace.toString() !== 
-            workspace._id.toString()
+            asset.workspace.toString() !==
+            req.workspace._id.toString()
         ){
 
             return res.status(403).json({
@@ -203,18 +179,22 @@ const updateAsset = async(req,res,next)=>{
         }
 
 
+        // Never let the workspace/owner fields be overwritten from the body
+        const { workspace, addedBy, ...safeUpdates } = req.body;
+
+
         const updatedAsset =
         await Asset.findByIdAndUpdate(
 
             id,
 
-            req.body,
+            safeUpdates,
 
             {
                 new:true
             }
 
-        );
+        ).populate("addedBy","name email");
 
 
         res.status(200).json({
@@ -234,6 +214,7 @@ const updateAsset = async(req,res,next)=>{
     }
 
 };
+
 
 const deleteAsset = async(req,res,next)=>{
 
@@ -258,30 +239,27 @@ const deleteAsset = async(req,res,next)=>{
         }
 
 
-        const workspace = await getUserWorkspace(req.user._id);
+        if(
+            asset.workspace.toString() !==
+            req.workspace._id.toString()
+        ){
 
+            return res.status(403).json({
 
-        if(!workspace){
-
-            return res.status(404).json({
-
-                message:"Workspace not found"
+                message:"You cannot delete this asset"
 
             });
 
         }
 
 
-        // Check ownership of workspace
-
-        if(
-            asset.workspace.toString() !== 
-            workspace._id.toString()
-        ){
+        // Second safety net: the route already requires OWNER, but checking
+        // here too means the rule holds even if the route is ever changed.
+        if(req.workspaceRole !== "OWNER"){
 
             return res.status(403).json({
 
-                message:"You cannot delete this asset"
+                message:"Only the workspace owner can delete assets"
 
             });
 
@@ -307,27 +285,14 @@ const deleteAsset = async(req,res,next)=>{
 
 };
 
+
 const getWarrantyStatus = async(req,res,next)=>{
 
     try{
 
-        const workspace = await getUserWorkspace(req.user._id);
-
-
-        if(!workspace){
-
-            return res.status(404).json({
-
-                message:"Workspace not found"
-
-            });
-
-        }
-
-
         const assets = await Asset.find({
 
-            workspace: workspace._id
+            workspace: req.workspace._id
 
         });
 
@@ -397,6 +362,7 @@ const getWarrantyStatus = async(req,res,next)=>{
 
 };
 
+
 const uploadInvoice = async (req, res,next) => {
     try {
 
@@ -410,17 +376,9 @@ const uploadInvoice = async (req, res,next) => {
             });
         }
 
-        const workspace = await getUserWorkspace(req.user._id);
-
-        if (!workspace) {
-            return res.status(404).json({
-                message: "Workspace not found"
-            });
-        }
-
         if (
             asset.workspace.toString() !==
-            workspace._id.toString()
+            req.workspace._id.toString()
         ) {
             return res.status(403).json({
                 message: "You cannot upload invoice for this asset"
@@ -433,7 +391,25 @@ const uploadInvoice = async (req, res,next) => {
             });
         }
 
-        const result = await uploadToCloudinary(req.file.buffer);
+        let result;
+
+        try{
+
+            result = await uploadToCloudinary(req.file.buffer);
+
+        }
+        catch(uploadError){
+
+            // Cloudinary's own error ("Must supply api_key" etc.) is a
+            // config problem on our side, not something the user caused -
+            // don't leak the raw SDK message to them.
+            console.error("Cloudinary upload failed:", uploadError.message);
+
+            return res.status(500).json({
+                message: "Invoice upload is not configured correctly on the server. Check Cloudinary credentials in backend/.env."
+            });
+
+        }
 
         asset.invoiceUrl = result.secure_url;
 

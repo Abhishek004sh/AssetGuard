@@ -1,16 +1,29 @@
 import {
     useEffect,
-    useState
+    useState,
+    useContext,
+    useCallback
 } from "react";
 
 import Layout from "../components/Layout";
+import AssetDetailsModal from "./AssetDetailsModal";
+import { WorkspaceContext } from "../context/WorkspaceContext";
+import {
+    inputCls,
+    primaryBtnCls,
+    secondaryBtnCls,
+    PageHeading,
+    ErrorBanner,
+    EmptyState,
+    Row,
+    Tag
+} from "../components/ui";
 
 import {
     getAssets,
     createAsset,
     updateAsset,
-    deleteAsset,
-    uploadInvoice
+    deleteAsset
 } from "../services/asset.service";
 
 
@@ -27,6 +40,10 @@ function Assets(){
         serialNumber:""
     };
 
+    // Role in the CURRENT workspace decides what the UI offers.
+    // The backend checks this again on every request.
+    const { currentWorkspaceId, isOwner, canEdit } = useContext(WorkspaceContext);
+
     const [form,setForm] = useState(emptyForm);
 
     const [assets,setAssets] = useState([]);
@@ -36,10 +53,11 @@ function Assets(){
     const [page,setPage] = useState(1);
     const [pagination,setPagination] = useState({ total:0, page:1, pages:1 });
 
-    const [invoiceFiles,setInvoiceFiles] = useState({});
-    const [uploadingId,setUploadingId] = useState(null);
+    const [selectedAsset,setSelectedAsset] = useState(null);
 
+    const [showForm,setShowForm] = useState(false);
     const [saving,setSaving] = useState(false);
+    const [error,setError] = useState("");
 
 
     const handleChange=(e)=>{
@@ -55,19 +73,46 @@ function Assets(){
 
     };
 
-    const loadAssets = async () => {
 
-        const data = await getAssets({
-            search,
-            page,
-            limit: 10
-        });
+    const loadAssets = useCallback(async (searchTerm = search, pageNum = page) => {
 
-        setAssets(data.assets);
+        try{
 
-        setPagination(data.pagination);
+            const data = await getAssets({
+                search: searchTerm,
+                page: pageNum,
+                limit: 10
+            });
 
-    };
+            setAssets(data.assets);
+
+            setPagination(data.pagination);
+
+            setError("");
+
+        }
+        catch(err){
+
+            setError(
+                err.response?.data?.message ||
+                "Could not load assets"
+            );
+
+        }
+
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    },[page, currentWorkspaceId]);
+
+
+    // Reload whenever the page changes OR the user switches workspace,
+    // so we never show another workspace's assets.
+    useEffect(()=>{
+
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        loadAssets();
+
+    },[loadAssets]);
+
 
     const handleSubmit = async (e) => {
 
@@ -75,20 +120,17 @@ function Assets(){
 
         setSaving(true);
 
+        setError("");
+
         try{
 
             if (editing) {
 
-                const data = await updateAsset(
-                    editing._id,
-                    form
-                );
+                const data = await updateAsset(editing._id, form);
 
                 setAssets(
                     assets.map(asset =>
-                        asset._id === editing._id
-                            ? data.asset
-                            : asset
+                        asset._id === editing._id ? data.asset : asset
                     )
                 );
 
@@ -104,6 +146,16 @@ function Assets(){
 
             setForm(emptyForm);
 
+            setShowForm(false);
+
+        }
+        catch(err){
+
+            setError(
+                err.response?.data?.message ||
+                "Could not save the asset"
+            );
+
         }
         finally{
 
@@ -113,21 +165,35 @@ function Assets(){
 
     };
 
+
     const handleDelete = async (id) => {
 
-        await deleteAsset(id);
+        if(!window.confirm("Delete this asset?")) return;
 
-        setAssets(
-            assets.filter(
-                asset => asset._id !== id
-            )
-        );
+        try{
+
+            await deleteAsset(id);
+
+            setAssets(assets.filter(asset => asset._id !== id));
+
+        }
+        catch(err){
+
+            setError(
+                err.response?.data?.message ||
+                "Could not delete the asset"
+            );
+
+        }
 
     };
+
 
     const handleEdit = (asset) => {
 
         setEditing(asset);
+
+        setShowForm(true);
 
         setForm({
             name: asset.name,
@@ -141,60 +207,17 @@ function Assets(){
 
     };
 
+
     const handleCancelEdit = () => {
 
         setEditing(null);
 
         setForm(emptyForm);
 
-    };
-
-    const handleInvoiceFileChange = (assetId, file) => {
-
-        setInvoiceFiles({
-            ...invoiceFiles,
-            [assetId]: file
-        });
+        setShowForm(false);
 
     };
 
-    const handleInvoiceUpload = async (assetId) => {
-
-        const file = invoiceFiles[assetId];
-
-        if(!file) return;
-
-        setUploadingId(assetId);
-
-        try{
-
-            const data = await uploadInvoice(assetId, file);
-
-            setAssets(
-                assets.map(asset =>
-                    asset._id === assetId
-                        ? { ...asset, invoiceUrl: data.invoiceUrl }
-                        : asset
-                )
-            );
-
-        }
-        finally{
-
-            setUploadingId(null);
-
-        }
-
-    };
-
-
-    useEffect(()=>{
-
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        loadAssets();
-
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    },[page]);
 
     const handleSearchSubmit = (e) => {
 
@@ -202,7 +225,41 @@ function Assets(){
 
         setPage(1);
 
-        loadAssets();
+        loadAssets(search, 1);
+
+    };
+
+
+    // Keep the modal in sync after an invoice upload
+    const handleInvoiceUploaded = (assetId, invoiceUrl) => {
+
+        setAssets(
+            assets.map(a =>
+                a._id === assetId ? { ...a, invoiceUrl } : a
+            )
+        );
+
+        setSelectedAsset(prev =>
+            prev && prev._id === assetId
+                ? { ...prev, invoiceUrl }
+                : prev
+        );
+
+    };
+
+
+    // Simple warranty label so the list is scannable at a glance
+    const warrantyLabel = (asset) => {
+
+        if(!asset.warrantyExpiry) return null;
+
+        const days = Math.ceil(
+            (new Date(asset.warrantyExpiry) - new Date()) / (1000*60*60*24)
+        );
+
+        if(days < 0)  return { text:"Warranty expired", tone:"rust" };
+        if(days <= 30) return { text:`Expires in ${days}d`, tone:"brass" };
+        return { text:"Under warranty", tone:"moss" };
 
     };
 
@@ -212,283 +269,267 @@ function Assets(){
         <Layout>
 
 
-            <h1 className="text-3xl font-bold mb-6">
+            <PageHeading
+                action={canEdit && !showForm && (
+                    <button
+                    onClick={() => setShowForm(true)}
+                    className={primaryBtnCls}
+                    >
+                        Add asset
+                    </button>
+                )}
+            >
                 Assets
-            </h1>
+            </PageHeading>
 
-            <form onSubmit={handleSearchSubmit} className="mb-6 flex gap-2">
+
+            <ErrorBanner>{error}</ErrorBanner>
+
+
+            <form onSubmit={handleSearchSubmit} className="mb-5 flex gap-2">
 
                 <input
                 placeholder="Search assets by name..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="border p-2 rounded flex-1"
+                className={`${inputCls} flex-1`}
                 />
 
                 <button
                 type="submit"
-                className="bg-gray-800 text-white px-4 py-2 rounded"
+                className={secondaryBtnCls}
                 >
                     Search
                 </button>
 
             </form>
 
-            <form
-                onSubmit={handleSubmit}
-                className="bg-white p-5 rounded-xl shadow mb-6"
-                >
 
-                <h2 className="font-semibold mb-3 text-gray-700">
-                    {editing ? "Edit Asset" : "Add New Asset"}
-                </h2>
+            {showForm && canEdit && (
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Row className="mb-6">
 
-                    <input
-                    name="name"
-                    placeholder="Asset Name"
-                    value={form.name}
-                    onChange={handleChange}
-                    className="border p-2 rounded"
-                    required
-                    />
+                    <form onSubmit={handleSubmit}>
 
+                        <h2 className="font-display font-semibold mb-3 text-ink">
+                            {editing ? "Edit asset" : "Add new asset"}
+                        </h2>
 
-                    <input
-                    name="category"
-                    placeholder="Category"
-                    value={form.category}
-                    onChange={handleChange}
-                    className="border p-2 rounded"
-                    required
-                    />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
 
+                            <input
+                            name="name"
+                            placeholder="Asset name"
+                            value={form.name}
+                            onChange={handleChange}
+                            className={inputCls}
+                            required
+                            />
 
-                    <input
-                    name="purchasePrice"
-                    type="number"
-                    placeholder="Purchase Price"
-                    value={form.purchasePrice}
-                    onChange={handleChange}
-                    className="border p-2 rounded"
-                    required
-                    />
+                            <input
+                            name="category"
+                            placeholder="Category"
+                            value={form.category}
+                            onChange={handleChange}
+                            className={inputCls}
+                            required
+                            />
 
-                    <input
-                    name="serialNumber"
-                    placeholder="Serial Number (optional)"
-                    value={form.serialNumber}
-                    onChange={handleChange}
-                    className="border p-2 rounded"
-                    />
+                            <input
+                            name="purchasePrice"
+                            type="number"
+                            placeholder="Purchase price"
+                            value={form.purchasePrice}
+                            onChange={handleChange}
+                            className={inputCls}
+                            required
+                            />
 
-                    <div>
-                        <label className="text-xs text-gray-500 block mb-1">
-                            Purchase Date
-                        </label>
-                        <input
-                        name="purchaseDate"
-                        type="date"
-                        value={form.purchaseDate}
+                            <input
+                            name="serialNumber"
+                            placeholder="Serial number (optional)"
+                            value={form.serialNumber}
+                            onChange={handleChange}
+                            className={inputCls}
+                            />
+
+                            <div>
+                                <label className="text-xs text-slate block mb-1">
+                                    Purchase date
+                                </label>
+                                <input
+                                name="purchaseDate"
+                                type="date"
+                                value={form.purchaseDate}
+                                onChange={handleChange}
+                                className={inputCls}
+                                required
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-xs text-slate block mb-1">
+                                    Warranty expiry
+                                </label>
+                                <input
+                                name="warrantyExpiry"
+                                type="date"
+                                value={form.warrantyExpiry}
+                                onChange={handleChange}
+                                className={inputCls}
+                                required
+                                />
+                            </div>
+
+                        </div>
+
+                        <textarea
+                        name="description"
+                        placeholder="Description (optional)"
+                        value={form.description}
                         onChange={handleChange}
-                        className="border p-2 rounded w-full"
-                        required
+                        className={`${inputCls} mt-3`}
+                        rows="2"
                         />
-                    </div>
 
-                    <div>
-                        <label className="text-xs text-gray-500 block mb-1">
-                            Warranty Expiry
-                        </label>
-                        <input
-                        name="warrantyExpiry"
-                        type="date"
-                        value={form.warrantyExpiry}
-                        onChange={handleChange}
-                        className="border p-2 rounded w-full"
-                        required
-                        />
-                    </div>
+                        <div className="flex gap-2 mt-4">
 
-                </div>
+                            <button
+                            type="submit"
+                            disabled={saving}
+                            className={primaryBtnCls}
+                            >
+                                {saving
+                                    ? "Saving..."
+                                    : editing ? "Update asset" : "Add asset"
+                                }
+                            </button>
 
-                <textarea
-                name="description"
-                placeholder="Description (optional)"
-                value={form.description}
-                onChange={handleChange}
-                className="border p-2 rounded w-full mt-3"
-                rows="2"
-                />
+                            <button
+                            type="button"
+                            onClick={handleCancelEdit}
+                            className={secondaryBtnCls}
+                            >
+                                Cancel
+                            </button>
 
-                <div className="flex gap-2 mt-4">
+                        </div>
 
-                    <button
-                    type="submit"
-                    disabled={saving}
-                    className="bg-black text-white px-4 py-2 rounded disabled:opacity-60"
-                    >
-                        {saving
-                            ? "Saving..."
-                            : editing ? "Update Asset" : "Add Asset"
-                        }
-                    </button>
+                    </form>
 
-                    {editing && (
+                </Row>
 
-                        <button
-                        type="button"
-                        onClick={handleCancelEdit}
-                        className="bg-gray-300 px-4 py-2 rounded"
-                        >
-                            Cancel
-                        </button>
-
-                    )}
-
-                </div>
+            )}
 
 
-            </form>
-
-            <div className="grid gap-4">
-
+            <div className="flex flex-col gap-px bg-border">
 
                 {assets.length === 0 && (
 
-                    <div className="bg-white p-5 rounded-xl shadow text-gray-500">
-                        No assets yet. Add your first one above.
-                    </div>
+                    <EmptyState>
+                        {canEdit
+                            ? "No assets yet. Add your first one above."
+                            : "No assets in this workspace yet."
+                        }
+                    </EmptyState>
 
                 )}
 
-                {
-                    assets.map((asset)=>(
+                {assets.map((asset)=>{
 
+                    const w = warrantyLabel(asset);
 
-                        <div
+                    return (
+
+                        <Row
                         key={asset._id}
-                        className="bg-white p-5 rounded-xl shadow"
+                        className="flex justify-between items-center flex-wrap gap-3"
                         >
 
-                            <div className="flex justify-between items-start flex-wrap gap-2">
+                            <div className="min-w-0">
 
-                                <div>
+                                <div className="flex items-center gap-2 flex-wrap">
 
-                                    <h2 className="text-xl font-bold">
+                                    <h2 className="font-display text-base font-semibold text-ink">
                                         {asset.name}
                                     </h2>
 
-                                    <p className="text-gray-500 text-sm">
-                                        {asset.category}
-                                    </p>
+                                    {w && <Tag tone={w.tone}>{w.text}</Tag>}
+
+                                    {asset.invoiceUrl && <Tag tone="ink">Invoice on file</Tag>}
 
                                 </div>
 
-                                <div>
+                                <p className="text-slate text-sm mt-0.5">
+                                    {asset.category} · <span className="font-mono">₹{asset.purchasePrice}</span>
+                                </p>
+
+                            </div>
+
+                            <div className="flex gap-4 items-center text-sm shrink-0">
+
+                                <button
+                                onClick={() => setSelectedAsset(asset)}
+                                className="text-ink hover:text-brass-strong transition-colors"
+                                >
+                                    View details
+                                </button>
+
+                                {canEdit && (
 
                                     <button
-                                        onClick={() => handleEdit(asset)}
-                                        className="bg-blue-500 text-white px-3 py-1 rounded mr-2 text-sm"
+                                    onClick={() => handleEdit(asset)}
+                                    className="text-ink hover:text-brass-strong transition-colors"
                                     >
                                         Edit
                                     </button>
 
+                                )}
+
+                                {/* Delete is owner-only. The backend rejects
+                                    a member's DELETE call regardless. */}
+                                {isOwner && (
+
                                     <button
-                                        onClick={() => handleDelete(asset._id)}
-                                        className="bg-red-500 text-white px-3 py-1 rounded text-sm"
+                                    onClick={() => handleDelete(asset._id)}
+                                    className="text-rust hover:underline"
                                     >
                                         Delete
                                     </button>
-
-                                </div>
-
-                            </div>
-
-
-                            <p className="mt-2">
-                                ₹ {asset.purchasePrice}
-                            </p>
-
-                            {asset.serialNumber && (
-                                <p className="text-sm text-gray-500">
-                                    Serial: {asset.serialNumber}
-                                </p>
-                            )}
-
-                            <p className="text-sm text-gray-500">
-                                Warranty till: {asset.warrantyExpiry?.slice(0, 10)}
-                            </p>
-
-                            <div className="mt-3 pt-3 border-t">
-
-                                {asset.invoiceUrl ? (
-
-                                    <a
-                                    href={asset.invoiceUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-blue-600 text-sm underline"
-                                    >
-                                        View uploaded invoice
-                                    </a>
-
-                                ) : (
-
-                                    <div className="flex items-center gap-2">
-
-                                        <input
-                                        type="file"
-                                        onChange={(e) =>
-                                            handleInvoiceFileChange(asset._id, e.target.files[0])
-                                        }
-                                        className="text-sm"
-                                        />
-
-                                        <button
-                                        onClick={() => handleInvoiceUpload(asset._id)}
-                                        disabled={uploadingId === asset._id}
-                                        className="bg-gray-800 text-white px-3 py-1 rounded text-sm disabled:opacity-60"
-                                        >
-                                            {uploadingId === asset._id ? "Uploading..." : "Upload Invoice"}
-                                        </button>
-
-                                    </div>
 
                                 )}
 
                             </div>
 
-                        </div>
+                        </Row>
 
+                    );
 
-                    ))
-                }
-
+                })}
 
             </div>
 
+
             {pagination.pages > 1 && (
 
-                <div className="flex justify-center gap-2 mt-6">
+                <div className="flex justify-center items-center gap-3 mt-6">
 
                     <button
                     disabled={page <= 1}
                     onClick={() => setPage(page - 1)}
-                    className="px-3 py-1 rounded border disabled:opacity-40"
+                    className="text-sm border border-border px-3 py-1.5 text-ink hover:border-ink disabled:opacity-40 disabled:hover:border-border transition-colors"
                     >
                         Prev
                     </button>
 
-                    <span className="px-3 py-1 text-gray-600">
+                    <span className="text-sm text-slate">
                         Page {pagination.page} of {pagination.pages}
                     </span>
 
                     <button
                     disabled={page >= pagination.pages}
                     onClick={() => setPage(page + 1)}
-                    className="px-3 py-1 rounded border disabled:opacity-40"
+                    className="text-sm border border-border px-3 py-1.5 text-ink hover:border-ink disabled:opacity-40 disabled:hover:border-border transition-colors"
                     >
                         Next
                     </button>
@@ -496,6 +537,14 @@ function Assets(){
                 </div>
 
             )}
+
+
+            <AssetDetailsModal
+            asset={selectedAsset}
+            canEdit={canEdit}
+            onClose={() => setSelectedAsset(null)}
+            onInvoiceUploaded={handleInvoiceUploaded}
+            />
 
 
         </Layout>

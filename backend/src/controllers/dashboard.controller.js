@@ -7,22 +7,7 @@ const getDashboard = async(req,res,next)=>{
 
     try{
 
-        const workspace = await Workspace.findOne({
-
-            "members.user":req.user._id
-
-        });
-
-
-        if(!workspace){
-
-            return res.status(404).json({
-
-                message:"Workspace not found"
-
-            });
-
-        }
+        const workspace = req.workspace;
 
 
         // Assets

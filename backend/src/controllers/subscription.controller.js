@@ -1,6 +1,4 @@
 const Subscription = require("../models/Subscription");
-const Workspace = require("../models/Workspace");
-const getUserWorkspace = require("../services/workspace.service");
 
 
 const createSubscription = async(req,res,next)=>{
@@ -18,18 +16,7 @@ const createSubscription = async(req,res,next)=>{
         } = req.body;
 
 
-        const workspace = await getUserWorkspace(req.user._id);
-
-
-        if(!workspace){
-
-            return res.status(404).json({
-
-                message:"Workspace not found"
-
-            });
-
-        }
+        const workspace = req.workspace;
 
 
         const subscription =
@@ -86,16 +73,7 @@ const getSubscriptions = async(req,res,next)=>{
         } = req.query;
 
 
-        const workspace = await getUserWorkspace(req.user._id)
-
-
-        if(!workspace){
-
-            return res.status(404).json({
-                message:"Workspace not found"
-            });
-
-        }
+        const workspace = req.workspace;
 
 
         const query = {
@@ -154,18 +132,7 @@ const getSubscriptionStats = async(req,res,next)=>{
 
     try{
 
-        const workspace = await getUserWorkspace(req.user._id);
-
-
-        if(!workspace){
-
-            return res.status(404).json({
-
-                message:"Workspace not found"
-
-            });
-
-        }
+        const workspace = req.workspace;
 
 
         const subscriptions =
@@ -285,18 +252,7 @@ const updateSubscription = async(req,res,next)=>{
         }
 
 
-        const workspace = await getUserWorkspace(req.user._id);
-
-
-        if(!workspace){
-
-            return res.status(404).json({
-
-                message:"Workspace not found"
-
-            });
-
-        }
+        const workspace = req.workspace;
 
 
         // Workspace ownership check
@@ -370,18 +326,7 @@ const deleteSubscription = async(req,res,next)=>{
         }
 
 
-        const workspace = await getUserWorkspace(req.user._id);
-
-
-        if(!workspace){
-
-            return res.status(404).json({
-
-                message:"Workspace not found"
-
-            });
-
-        }
+        const workspace = req.workspace;
 
 
         if(
