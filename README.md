@@ -15,6 +15,7 @@ AssetGuard helps teams keep track of the equipment they own, when its warranty r
 - **Invoice uploads** — attach an invoice (PDF/image) to an asset, stored via Cloudinary
 - **Subscription tracking** — track recurring subscriptions and renewal stats per workspace
 - **Notifications** — warranty and subscription renewal checks surfaced to the user
+- **Ask AI** — ask plain-English questions about a workspace's assets and subscriptions (powered by the Gemini API; answers use only that workspace's data)
 - **JWT authentication** — register/login with token-based auth
 
 ## Tech Stack

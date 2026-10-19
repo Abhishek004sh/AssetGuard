@@ -6,6 +6,7 @@ const navItems = [
     { to: "/assets", label: "Assets" },
     { to: "/subscriptions", label: "Subscriptions" },
     { to: "/notifications", label: "Notifications" },
+    { to: "/ask", label: "Ask AI" },
     { to: "/workspace", label: "Workspace" }
 ];
 

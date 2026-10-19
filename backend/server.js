@@ -15,6 +15,7 @@ const assetRoutes = require("./src/routes/asset.routes");
 const subscriptionRoutes = require("./src/routes/subscription.routes");
 const dashboardRoutes = require("./src/routes/dashboard.routes");
 const notificationRoutes = require("./src/routes/notification.routes");
+const aiRoutes = require("./src/routes/ai.routes");
 const errorHandler = require("./src/middleware/error.middleware");
 connectDB();
 
@@ -31,6 +32,7 @@ app.use("/api/assets",assetRoutes);
 app.use("/api/subscriptions",subscriptionRoutes);
 app.use("/api/dashboard",dashboardRoutes);
 app.use("/api/notifications",notificationRoutes);
+app.use("/api/ai",aiRoutes);
 
 // Test Route
 app.get("/", (req, res) => {

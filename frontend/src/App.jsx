@@ -8,6 +8,7 @@ import Assets from "./pages/Assets";
 import Subscriptions from "./pages/Subscriptions";
 import Notifications from "./pages/Notifications";
 import Workspace from "./pages/Workspace";
+import AskAI from "./pages/AskAI";
 
 
 function App(){
@@ -69,6 +70,15 @@ function App(){
           element={
           <PrivateRoute>
             <Notifications/>
+          </PrivateRoute>
+        }
+        />
+
+        <Route
+          path="/ask"
+          element={
+          <PrivateRoute>
+            <AskAI/>
           </PrivateRoute>
         }
         />
